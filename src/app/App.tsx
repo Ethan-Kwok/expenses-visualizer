@@ -69,11 +69,6 @@ export default function App() {
     dateMin: number;
     dateMax: number;
   } | null>(null);
-  const touchStartRef = useRef<{
-    dist: number;
-    dateMin: number;
-    dateMax: number;
-  } | null>(null);
 
   // Load default CSV data - removed for privacy
   // useEffect(() => {
@@ -521,12 +516,7 @@ export default function App() {
     // Set up clipping region for graph area
     ctx.save();
     ctx.beginPath();
-    ctx.rect(
-      margin.left,
-      margin.top,
-      chartWidth,
-      chartHeight
-    );
+    ctx.rect(margin.left, margin.top, chartWidth, chartHeight);
     ctx.clip();
 
     // Draw series
@@ -759,6 +749,111 @@ export default function App() {
     };
   }, [dateRange]);
 
+  // Add touch event listeners with passive: false for mobile zoom
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    let touchStart: { dist: number; centerX: number; dateMin: number; dateMax: number } | null = null;
+
+    const handleTouchStartNative = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        if (dateRange.min === null || dateRange.max === null) return;
+
+        const touch1 = e.touches[0];
+        const touch2 = e.touches[1];
+        const dist = Math.hypot(
+          touch2.clientX - touch1.clientX,
+          touch2.clientY - touch1.clientY,
+        );
+        const centerX = (touch1.clientX + touch2.clientX) / 2;
+
+        touchStart = {
+          dist,
+          centerX,
+          dateMin: dateRange.min,
+          dateMax: dateRange.max,
+        };
+      } else if (e.touches.length === 1) {
+        // Single touch for panning
+        if (dateRange.min === null || dateRange.max === null) return;
+
+        panStartRef.current = {
+          x: e.touches[0].clientX,
+          dateMin: dateRange.min,
+          dateMax: dateRange.max,
+        };
+      }
+    };
+
+    const handleTouchMoveNative = (e: TouchEvent) => {
+      if (e.touches.length === 2 && touchStart) {
+        e.preventDefault();
+
+        const touch1 = e.touches[0];
+        const touch2 = e.touches[1];
+        const dist = Math.hypot(
+          touch2.clientX - touch1.clientX,
+          touch2.clientY - touch1.clientY,
+        );
+        const centerX = (touch1.clientX + touch2.clientX) / 2;
+
+        // Calculate zoom based on pinch distance
+        const scale = touchStart.dist / dist;
+        const currentRange = touchStart.dateMax - touchStart.dateMin;
+        const newRange = currentRange * scale;
+
+        // Calculate pan based on center movement
+        const rect = canvas.getBoundingClientRect();
+        const width = rect.width;
+        const margin = { left: 70, right: 30 };
+        const chartWidth = width - margin.left - margin.right;
+        const centerDelta = centerX - touchStart.centerX;
+        const dateDelta = -(centerDelta / chartWidth) * newRange;
+
+        const center = (touchStart.dateMin + touchStart.dateMax) / 2;
+        setDateRange({
+          min: center - newRange / 2 + dateDelta,
+          max: center + newRange / 2 + dateDelta,
+        });
+      } else if (e.touches.length === 1 && panStartRef.current) {
+        e.preventDefault();
+
+        const rect = canvas.getBoundingClientRect();
+        const width = rect.width;
+        const margin = { left: 70, right: 30 };
+        const chartWidth = width - margin.left - margin.right;
+
+        const deltaX = e.touches[0].clientX - panStartRef.current.x;
+        const dateRange = panStartRef.current.dateMax - panStartRef.current.dateMin;
+        const deltaTime = -(deltaX / chartWidth) * dateRange;
+
+        setDateRange({
+          min: panStartRef.current.dateMin + deltaTime,
+          max: panStartRef.current.dateMax + deltaTime,
+        });
+      }
+    };
+
+    const handleTouchEndNative = () => {
+      touchStart = null;
+      panStartRef.current = null;
+    };
+
+    canvas.addEventListener('touchstart', handleTouchStartNative, { passive: false });
+    canvas.addEventListener('touchmove', handleTouchMoveNative, { passive: false });
+    canvas.addEventListener('touchend', handleTouchEndNative);
+    canvas.addEventListener('touchcancel', handleTouchEndNative);
+
+    return () => {
+      canvas.removeEventListener('touchstart', handleTouchStartNative);
+      canvas.removeEventListener('touchmove', handleTouchMoveNative);
+      canvas.removeEventListener('touchend', handleTouchEndNative);
+      canvas.removeEventListener('touchcancel', handleTouchEndNative);
+    };
+  }, [dateRange]);
+
   const handleMouseDown = (
     e: React.MouseEvent<HTMLCanvasElement>,
   ) => {
@@ -802,63 +897,6 @@ export default function App() {
   const handleMouseUp = () => {
     setIsPanning(false);
     panStartRef.current = null;
-  };
-
-  const handleTouchStart = (
-    e: React.TouchEvent<HTMLCanvasElement>,
-  ) => {
-    if (e.touches.length === 2) {
-      e.preventDefault();
-      if (dateRange.min === null || dateRange.max === null)
-        return;
-
-      const touch1 = e.touches[0];
-      const touch2 = e.touches[1];
-      const dist = Math.hypot(
-        touch2.clientX - touch1.clientX,
-        touch2.clientY - touch1.clientY,
-      );
-
-      touchStartRef.current = {
-        dist,
-        dateMin: dateRange.min,
-        dateMax: dateRange.max,
-      };
-    }
-  };
-
-  const handleTouchMove = (
-    e: React.TouchEvent<HTMLCanvasElement>,
-  ) => {
-    if (e.touches.length === 2 && touchStartRef.current) {
-      e.preventDefault();
-
-      const touch1 = e.touches[0];
-      const touch2 = e.touches[1];
-      const dist = Math.hypot(
-        touch2.clientX - touch1.clientX,
-        touch2.clientY - touch1.clientY,
-      );
-
-      const scale = touchStartRef.current.dist / dist;
-      const currentRange =
-        touchStartRef.current.dateMax -
-        touchStartRef.current.dateMin;
-      const newRange = currentRange * scale;
-
-      const center =
-        (touchStartRef.current.dateMin +
-          touchStartRef.current.dateMax) /
-        2;
-      setDateRange({
-        min: center - newRange / 2,
-        max: center + newRange / 2,
-      });
-    }
-  };
-
-  const handleTouchEnd = () => {
-    touchStartRef.current = null;
   };
 
   const resetZoom = () => {
@@ -1214,9 +1252,6 @@ export default function App() {
               handleCanvasMouseLeave();
               handleMouseUp();
             }}
-            onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove}
-            onTouchEnd={handleTouchEnd}
             style={{ cursor: isPanning ? "grabbing" : "grab" }}
           ></canvas>
         </div>
