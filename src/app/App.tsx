@@ -754,27 +754,20 @@ export default function App() {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    let touchStart: { dist: number; centerX: number; dateMin: number; dateMax: number } | null = null;
+    let lastDist: number | null = null;
+    let lastCenterX: number | null = null;
 
     const handleTouchStartNative = (e: TouchEvent) => {
       if (e.touches.length === 2) {
         e.preventDefault();
-        if (dateRange.min === null || dateRange.max === null) return;
 
         const touch1 = e.touches[0];
         const touch2 = e.touches[1];
-        const dist = Math.hypot(
+        lastDist = Math.hypot(
           touch2.clientX - touch1.clientX,
           touch2.clientY - touch1.clientY,
         );
-        const centerX = (touch1.clientX + touch2.clientX) / 2;
-
-        touchStart = {
-          dist,
-          centerX,
-          dateMin: dateRange.min,
-          dateMax: dateRange.max,
-        };
+        lastCenterX = (touch1.clientX + touch2.clientX) / 2;
       } else if (e.touches.length === 1) {
         // Single touch for panning
         if (dateRange.min === null || dateRange.max === null) return;
@@ -788,35 +781,40 @@ export default function App() {
     };
 
     const handleTouchMoveNative = (e: TouchEvent) => {
-      if (e.touches.length === 2 && touchStart) {
+      if (e.touches.length === 2 && lastDist !== null && lastCenterX !== null) {
         e.preventDefault();
+        if (dateRange.min === null || dateRange.max === null) return;
 
         const touch1 = e.touches[0];
         const touch2 = e.touches[1];
-        const dist = Math.hypot(
+        const currentDist = Math.hypot(
           touch2.clientX - touch1.clientX,
           touch2.clientY - touch1.clientY,
         );
-        const centerX = (touch1.clientX + touch2.clientX) / 2;
+        const currentCenterX = (touch1.clientX + touch2.clientX) / 2;
 
-        // Calculate zoom based on pinch distance
-        const scale = touchStart.dist / dist;
-        const currentRange = touchStart.dateMax - touchStart.dateMin;
+        // Calculate zoom based on distance change from last frame
+        const scale = lastDist / currentDist;
+        const currentRange = dateRange.max - dateRange.min;
         const newRange = currentRange * scale;
 
-        // Calculate pan based on center movement
+        // Calculate pan based on center movement from last frame
         const rect = canvas.getBoundingClientRect();
         const width = rect.width;
         const margin = { left: 70, right: 30 };
         const chartWidth = width - margin.left - margin.right;
-        const centerDelta = centerX - touchStart.centerX;
+        const centerDelta = currentCenterX - lastCenterX;
         const dateDelta = -(centerDelta / chartWidth) * newRange;
 
-        const center = (touchStart.dateMin + touchStart.dateMax) / 2;
+        const center = (dateRange.min + dateRange.max) / 2;
         setDateRange({
           min: center - newRange / 2 + dateDelta,
           max: center + newRange / 2 + dateDelta,
         });
+
+        // Update for next frame
+        lastDist = currentDist;
+        lastCenterX = currentCenterX;
       } else if (e.touches.length === 1 && panStartRef.current) {
         e.preventDefault();
 
@@ -837,7 +835,8 @@ export default function App() {
     };
 
     const handleTouchEndNative = () => {
-      touchStart = null;
+      lastDist = null;
+      lastCenterX = null;
       panStartRef.current = null;
     };
 
