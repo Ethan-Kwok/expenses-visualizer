@@ -793,12 +793,14 @@ export default function App() {
         );
         const currentCenterX = (touch1.clientX + touch2.clientX) / 2;
 
-        // Calculate zoom based on distance change from last frame
-        const scale = lastDist / currentDist;
+        const scale = currentDist / lastDist;
         const currentRange = dateRange.max - dateRange.min;
-        const newRange = currentRange * scale;
+        let newRange = currentRange / scale;
 
-        // Calculate pan based on center movement from last frame
+        const minRange = 1000 * 60 * 60 * 24;
+        const maxRange = 1000 * 60 * 60 * 24 * 365 * 5;
+        newRange = Math.max(minRange, Math.min(maxRange, newRange));
+
         const rect = canvas.getBoundingClientRect();
         const width = rect.width;
         const margin = { left: 70, right: 30 };
@@ -812,7 +814,6 @@ export default function App() {
           max: center + newRange / 2 + dateDelta,
         });
 
-        // Update for next frame
         lastDist = currentDist;
         lastCenterX = currentCenterX;
       } else if (e.touches.length === 1 && panStartRef.current) {
